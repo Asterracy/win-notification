@@ -6,7 +6,7 @@ description: >-
   系统提示音、音效播放、弹窗提醒/系统对话框/通知横幅、审批弹窗、中文语音/TTS/文字转语音、
   音量调节/静音解除、持续监测/等待用户响应/升级提醒时使用。也用于执行长任务时
   通过声音或弹窗主动引起用户注意。
-version: 1.1.0
+version: 1.2.0
 ---
 
 # Windows 通知与语音提醒
@@ -260,6 +260,7 @@ while ($true) {
 - **多任务并发生成时**：若用户授权了"完成任务喊我"，仅在真正完成任务时呼叫，不要在中间过程反复呼叫
 - **外部可见动作**：语音/调音量/**弹窗**都会真实影响用户环境，必须严格遵循上面的授权规则，不得擅自触发
 - **弹窗阻塞性**：`MessageBox`/`InputBox` 会阻塞直到用户响应，务必用 Popup 带 timeout 或后台运行防挂死；不需要用户动作的提醒用 Toast
+- **edge-playback 也阻塞**：播完才返回，凡用于「分类 2 监测」或「循环播报」一律 `Start-Process` 后台运行（同上文阻塞性说明）
 
 ## 实测记录（2026-08-16，Windows 11 + pwsh 7.6.4 / Windows PowerShell 5.1）
 
@@ -357,12 +358,45 @@ while ($true) {
 
 ## 可选升级：edge-tts 自然语音
 
-Windows 自带 SAPI 语音机械感较强。若用户要求接近 Mac 的自然语音，可用微软 Edge 神经语音（免费在线，已装）：
+Windows 自带 SAPI 语音机械感较强。若用户要求接近 Mac 的自然语音，可用微软 Edge 神经语音（免费在线，需联网）。
+
+`pip install edge-tts` 会装出**两个**命令：`edge-tts`（合成文件）和 `edge-playback`（合成即播）。两种模式互补，按场景选：
+
+| 模式 | 命令 | 首音延迟 | 适用场景 |
+|------|------|---------|---------|
+| A · 文件模式 | `edge-tts --write-media` → 播放 | 需等整句合成完（短句约 3s） | 预合成缓存、循环播报、需要复用音频文件 |
+| B · 播放模式 | `edge-playback` | 同样需等合成完 | 一次性播报，不想手工管临时文件 |
+
+> ⚠️ **模式 B 不是流式播放**。`edge-playback` 内部仍先把整句合成到临时 mp3，再播放（源码 `edge_playback/__main__.py`：先 `_run_edge_tts()` 跑 `process.communicate()`，再 `_play_media()`）。它的真正收益是**省去建文件/起播放器/删文件三步**，而不是更快出声。
+
+### 模式 A：文件模式（默认，保留原有能力）
 
 ```powershell
-# pip install edge-tts 后
+pip install edge-tts
 python -c "import asyncio,edge_tts; asyncio.run(edge_tts.Communicate('需要你的确认','zh-CN-XiaoxiaoNeural',rate='+15%').save('out.mp3'))"
 # 播放: Start-Process out.mp3
 ```
 
-**何时用**：仅当用户明确要求"自然/好听/像真人"语音时升级；默认走系统自带（零依赖、离线）。
+**何时用**：需要循环播报同一句、需要把音频留给别的程序用、或同一段文本要重复播放（避免重复合成）。
+
+### 模式 B：播放模式（一次性播报更省事）
+
+```powershell
+pip install edge-tts
+edge-playback --voice zh-CN-XiaoxiaoNeural --rate=+15% --text "需要你的确认"
+# 临时文件自动建、自动播、自动删
+```
+
+**依赖说明（Windows）**：`edge-playback` 在 Windows 上走 **win32 原生 MCI 播放**（`winmm.dll` 的 `mciSendStringW`），**不需要 ffmpeg / ffplay / mpv**。只有显式加 `--mpv` 时才需要装 mpv。（Linux/macOS 无原生实现，强制用 mpv。）
+
+**⚠️ 阻塞性**：`edge-playback` 会**播完才返回**（`Play theMP3 Wait`）。用于本 skill 的「分类 2 持续监测」或「循环播报」时，必须 `Start-Process` 放后台，否则监测循环会被卡住：
+
+```powershell
+Start-Process edge-playback -ArgumentList '--voice','zh-CN-XiaoxiaoNeural','--text','需要你的审批' -NoNewWindow
+```
+
+**调试环境变量**：`EDGE_PLAYBACK_DEBUG=1` 打印临时文件路径；`EDGE_PLAYBACK_KEEP_TEMP=1` 保留临时 mp3/srt（便于排查）。
+
+**参数**：接受与 `edge-tts` 相同的选项（`--voice` / `--rate` / `--volume` / `--pitch`），但 `--write-media`、`--write-subtitles`、`--list-voices` 不可用。负值必须写成 `--rate=-50%`（等号不能省，否则被解析成新参数）。中文音色查询：`edge-tts --list-voices | Select-String zh-CN`。
+
+**何时用升级**：仅当用户明确要求"自然/好听/像真人"语音时升级；默认走系统自带（零依赖、离线）。
