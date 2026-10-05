@@ -29,7 +29,7 @@ Windows 语音合成与声音提醒 Skill —— [mac-voice](https://github.com/
 
 ## 与 mac-voice 的差异
 
-- 音质：Windows 自带 SAPI 是传统合成音，不及 macOS 神经语音自然；需要时可升级 edge-tts（微软 Edge 神经语音，晓晓/云希，接近 Siri 级别）
+- 音质：Windows 自带 SAPI 是传统合成音，不及 macOS 神经语音自然；需要时可升级 edge-tts（微软 Edge 神经语音，晓晓/云希，接近 Siri 级别）。`pip install edge-tts` 附带 `edge-tts`（合成文件）与 `edge-playback`（合成即播）两个命令，Windows 上 `edge-playback` 走 win32 原生播放，无需 ffmpeg/mpv。详见 SKILL.md「可选升级」一节
 - 静音检测：Windows 无原生命令读静音状态，用音量 0% 近似判断
 - Toast 横幅需 Windows PowerShell 5.1 执行（pwsh 7 加载 WinRT 类型失败）
 
